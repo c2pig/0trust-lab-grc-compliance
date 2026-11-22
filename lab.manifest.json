@@ -1,0 +1,40 @@
+{
+  "id": "grc-compliance",
+  "title": "Continuous Compliance & BNM RMiT / ISO 27001 Mapper",
+  "domainLabel": "GRC & Continuous Compliance",
+  "description": "Inject live multi-cloud configuration drift, observe cross-framework impact across BNM RMiT, ISO/IEC 27001:2022, and NIST CSF 2.0, and enforce fail-closed evidence verification.",
+  "repo": "c2pig/0trust-lab-grc-compliance",
+  "routePath": "/grc-compliance",
+  "standaloneUrl": "https://lab.0trust.dev/grc-compliance",
+  "localDevPort": 5182,
+  "archetype": "D",
+  "seats": [
+    {
+      "id": "cloud-engineer",
+      "persona": "Rohan Verma",
+      "roleLabel": "Cloud Engineer · Posture & Drift",
+      "appLabel": "Multi-Cloud Posture & Drift Injector"
+    },
+    {
+      "id": "auditor",
+      "persona": "Claire Dubois",
+      "roleLabel": "GRC Auditor · Evidence Reviewer",
+      "appLabel": "Regulatory Control & Evidence Workbench"
+    }
+  ],
+  "apiEndpoints": [
+    "/api/grc-compliance/posture",
+    "/api/grc-compliance/verify"
+  ],
+  "kvPrefixes": [
+    "lab8:grc:"
+  ],
+  "infraDependencies": [
+    "managed-infrastructure/modules/cloudflare-pages-lab",
+    "Cloudflare Pages Functions + STATE_KV (1h TTL)"
+  ],
+  "diagrams": {
+    "localArchitectureMd": "docs/ARCHITECTURE.md",
+    "zoominSvg": "docs/diagrams/grc_compliance_architecture.svg"
+  }
+}
