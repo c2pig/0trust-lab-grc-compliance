@@ -5,6 +5,7 @@
   "description": "Inject live multi-cloud configuration drift, observe cross-framework impact across BNM RMiT, ISO/IEC 27001:2022, and NIST CSF 2.0, and enforce fail-closed evidence verification.",
   "repo": "c2pig/0trust-lab-grc-compliance",
   "routePath": "/grc-compliance",
+  "apiPrefix": "/api/grc-compliance",
   "standaloneUrl": "https://lab.0trust.dev/grc-compliance",
   "localDevPort": 5182,
   "archetype": "D",
