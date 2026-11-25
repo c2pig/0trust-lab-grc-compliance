@@ -42,6 +42,7 @@ export function createCloudRunApp(options?: {
   const app = new Hono();
   const baseEnv: CloudRunEnv = options?.env ?? {
     ENVIRONMENT: process.env.ENVIRONMENT || (process.env.K_SERVICE ? 'production' : 'development'),
+    OTEL_SERVICE_NAME: process.env.OTEL_SERVICE_NAME,
     LAB_SLUG: process.env.LAB_SLUG || 'grc-compliance',
     LAB_ROUTER_SECRET: process.env.LAB_ROUTER_SECRET,
     FIRESTORE_COLLECTION: process.env.FIRESTORE_COLLECTION || 'kv_state',
