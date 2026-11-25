@@ -82,3 +82,4 @@ flowchart TB
    - Every posture transition and auditor sign-off computes a fresh SHA-256 digest over `(session_id, drift_id, posture_status, timestamp)` via WebCrypto (`crypto.subtle.digest`).
 5. **Strict Input Validation, Session Isolation & Telemetry Redaction**:
    - `MAX_BODY_BYTES = 65536`, `Set`-based enum validation (`INJECT_DRIFT | REMEDIATE | RESET`, `MARK_PASS | FLAG_REMEDIATION`), `sanitizeSessionId()`, `Cache-Control: no-store`, `expirationTtl: 3600`, and JWT signature redaction (`***REDACTED***`) with zero leakage of `X-Lab-Router-Secret` or `OTLP_AUTH_HEADER`.
+   - `_middleware.ts` exports non-blocking OTLP `/v1/traces` + `/v1/logs` with `OTEL_SERVICE_NAME=zerotrust-lab-grc-compliance` authenticated via GCP Secret Manager `grafana-otlp-auth-header` (`OTLP_AUTH_HEADER`), and `XRayTelemetryDrawer.tsx` surfaces a `Global Live Dashboard ↗` link to `https://0trust.dev/observability`.
