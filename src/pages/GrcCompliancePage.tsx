@@ -1,21 +1,8 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { ArrowLeft, Cloud, Compass, Download, RotateCcw } from 'lucide-react';
+import { driver } from 'driver.js';
+import 'driver.js/dist/driver.css';
 import {
-  AlertTriangle,
-  ArrowLeft,
-  ArrowRight,
-  CheckCircle2,
-  ClipboardCheck,
-  Copy,
-  Download,
-  FileCheck2,
-  Lock,
-  RotateCcw,
-  ShieldAlert,
-  ShieldCheck,
-  Wrench
-} from 'lucide-react';
-import {
-  ComplianceStage,
   DriftControlId,
   GrcComplianceState,
   GrcSeatId,
@@ -38,20 +25,17 @@ export interface GrcCompliancePageProps {
   onBack: () => void;
 }
 
-const STAGE_ITEMS: { id: ComplianceStage; label: string; subtitle: string }[] = [
-  { id: 1, label: 'Discovery', subtitle: 'Posture-to-Regulation Map' },
-  { id: 2, label: 'Understanding', subtitle: 'Live Drift Injection' },
-  { id: 3, label: 'Practice', subtitle: 'Auditor Workbench & 409 Trap' },
-  { id: 4, label: 'Reflection', subtitle: 'Readiness & Attestation' }
-];
-
 export function GrcCompliancePage({ onBack }: GrcCompliancePageProps) {
   const [sessionId, setSessionId] = useState<string>(() => createGrcSessionId());
+  const sessionIdRef = useRef<string>(sessionId);
+  sessionIdRef.current = sessionId;
+
   const [activeSeat, setActiveSeat] = useState<GrcSeatId>('cloud-engineer');
   const [state, setState] = useState<GrcComplianceState>(() => createInitialGrcState());
   const [busyControl, setBusyControl] = useState<DriftControlId | null>(null);
-  const [copiedPack, setCopiedPack] = useState<boolean>(false);
   const [spans, setSpans] = useState<ObservabilitySpan[]>([]);
+
+  const tourLaunchedRef = useRef<boolean>(false);
 
   const recordSpan = useCallback((span: ObservabilitySpan) => {
     setSpans((prev) => [span, ...prev].slice(0, 40));
@@ -60,7 +44,7 @@ export function GrcCompliancePage({ onBack }: GrcCompliancePageProps) {
   useEffect(() => {
     recordSpan(
       createGrcSpan({
-        sessionId,
+        sessionId: sessionIdRef.current,
         method: 'GET',
         path: '/api/grc-compliance/posture',
         status: 200,
@@ -73,47 +57,115 @@ export function GrcCompliancePage({ onBack }: GrcCompliancePageProps) {
         }
       })
     );
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [recordSpan]);
+
+  const startLabTour = useCallback(() => {
+    const driverObj = driver({
+      showProgress: true,
+      animate: true,
+      allowClose: true,
+      overlayOpacity: 0.5,
+      steps: [
+        {
+          popover: {
+            title: 'Lab Orientation: Continuous Compliance & Regulatory Mapper',
+            description:
+              'See how live cloud configuration posture maps directly to BNM RMiT, ISO/IEC 27001:2022, and NIST CSF 2.0 clauses with cryptographic SHA-256 evidence verification.'
+          }
+        },
+        {
+          element: '#tour-role-switcher',
+          popover: {
+            title: 'Role Switcher',
+            description:
+              'Switch between Rohan Verma (Cloud Engineer) and Claire Dubois (GRC Auditor). Notification dots highlight configuration drift or remediation requests.'
+          }
+        },
+        {
+          element: '#tour-workspace',
+          popover: {
+            title: 'Role Workspace',
+            description:
+              'Start as Rohan Verma to modify or harden production cloud resource configurations, then switch to Claire Dubois to inspect regulatory clauses and verify evidence digests.'
+          }
+        },
+        {
+          element: '.xray-drawer',
+          popover: {
+            title: 'X-Ray Telemetry Drawer',
+            description:
+              'Expand this bottom drawer anytime to inspect live HTTP spans, raw posture scanner outputs, cross-framework mappings, and SHA-256 evidence digests.'
+          }
+        },
+        {
+          element: '#tour-lab-controls',
+          popover: {
+            title: 'Lab Controls',
+            description:
+              'Use Lab Tour to replay this orientation, or Reset to restore all cloud controls to their verified baseline posture.'
+          }
+        }
+      ]
+    });
+    driverObj.drive();
   }, []);
+
+  useEffect(() => {
+    if (tourLaunchedRef.current) return;
+    tourLaunchedRef.current = true;
+    const timer = window.setTimeout(() => {
+      startLabTour();
+    }, 300);
+    return () => window.clearTimeout(timer);
+  }, [startLabTour]);
 
   const readiness = useMemo(() => computeAuditReadinessScore(state), [state]);
 
+  const hasRemediationTicket = useMemo(
+    () => Object.values(state.controls).some((c) => c.remediationRequested),
+    [state.controls]
+  );
+
+  const globalStatusLabel =
+    readiness.driftedCount > 0
+      ? `Drift Detected (${readiness.scorePct}%)`
+      : readiness.verifiedCount === POSTURE_CHECK_CATALOG.length
+        ? `Audit Ready (${readiness.scorePct}%)`
+        : `Pending Sign-Off (${readiness.scorePct}%)`;
+
   const seats: RoleSeatItem<GrcSeatId>[] = useMemo(() => {
-    const engineerBadge =
-      readiness.driftedCount > 0
-        ? {
-            text: `● ${readiness.driftedCount} Drift Active`,
-            tone: 'crimson' as const,
-            pulse: true
-          }
-        : { text: 'All Posture PASS', tone: 'emerald' as const };
+    const engineerBadge = hasRemediationTicket
+      ? { text: 'Remediation Req', tone: 'amber' as const, pulse: true }
+      : readiness.driftedCount > 0
+        ? { text: `${readiness.driftedCount} Drift`, tone: 'crimson' as const, pulse: true }
+        : null;
 
     const auditorBadge =
       readiness.driftedCount > 0
-        ? { text: '● Drift', tone: 'crimson' as const, pulse: true }
-        : readiness.verifiedCount === POSTURE_CHECK_CATALOG.length
-          ? { text: 'Verified PASS', tone: 'emerald' as const }
-          : { text: 'Pending Re-Verify', tone: 'amber' as const, pulse: true };
+        ? { text: `${readiness.driftedCount} Drift`, tone: 'crimson' as const, pulse: true }
+        : readiness.verifiedCount < POSTURE_CHECK_CATALOG.length
+          ? { text: 'Verify Ready', tone: 'amber' as const, pulse: true }
+          : null;
 
     return [
       {
         id: 'cloud-engineer',
         name: 'Rohan Verma',
-        roleLabel: 'Cloud Engineer · Posture & Drift',
-        appLabel: 'Multi-Cloud Posture & Drift Injector',
+        roleLabel: 'Cloud Engineer',
+        appLabel: 'Cloud Resource Config',
         avatarInitials: 'RV',
         badge: engineerBadge
       },
       {
         id: 'auditor',
         name: 'Claire Dubois',
-        roleLabel: 'GRC Auditor · Evidence Reviewer',
-        appLabel: 'Regulatory Control & Evidence Workbench',
+        roleLabel: 'GRC Auditor',
+        appLabel: 'Compliance Control & Evidence Matrix',
         avatarInitials: 'CD',
         badge: auditorBadge
       }
     ];
-  }, [readiness]);
+  }, [hasRemediationTicket, readiness]);
 
   const selectedDef = useMemo(
     () =>
@@ -121,21 +173,18 @@ export function GrcCompliancePage({ onBack }: GrcCompliancePageProps) {
       POSTURE_CHECK_CATALOG[0],
     [state.selectedControlId]
   );
-
   const selectedLive = state.controls[selectedDef.id];
-
-  const handleSelectStage = (stage: ComplianceStage) => {
-    setState((prev) => ({ ...prev, stage, lastErrorBanner: null }));
-  };
 
   const handleReset = async () => {
     const nextSid = createGrcSessionId();
-    const res = await callPostureApi(nextSid, 'RESET');
+    sessionIdRef.current = nextSid;
     setSessionId(nextSid);
     setActiveSeat('cloud-engineer');
     setState(createInitialGrcState());
-    setCopiedPack(false);
-    recordSpan(
+    setBusyControl(null);
+    const res = await callPostureApi(nextSid, 'RESET');
+    if (sessionIdRef.current !== nextSid) return;
+    setSpans([
       createGrcSpan({
         sessionId: nextSid,
         method: 'POST',
@@ -146,16 +195,18 @@ export function GrcCompliancePage({ onBack }: GrcCompliancePageProps) {
         telemetry: res.telemetry,
         responseSummary: res.rawPayload
       })
-    );
+    ]);
   };
 
   const handlePostureAction = async (
     driftId: DriftControlId,
     action: 'INJECT_DRIFT' | 'REMEDIATE'
   ) => {
+    const currentSid = sessionIdRef.current;
     setBusyControl(driftId);
     const t0 = performance.now();
-    const res = await callPostureApi(sessionId, action, driftId, state.controls);
+    const res = await callPostureApi(currentSid, action, driftId, state.controls);
+    if (sessionIdRef.current !== currentSid) return;
     const latencyMs = Math.max(4, Math.round(performance.now() - t0));
     const timestamp = new Date().toISOString();
 
@@ -175,8 +226,8 @@ export function GrcCompliancePage({ onBack }: GrcCompliancePageProps) {
         lastErrorBanner: null,
         lastActionSummary:
           action === 'INJECT_DRIFT'
-            ? `Injected ${driftId} drift — affected BNM RMiT, ISO 27001, and NIST CSF 2.0 clauses flipped to DRIFT.`
-            : `Remediated ${driftId} posture check — evidence digest refreshed. Switch to Auditor seat to verify PASS.`,
+            ? `Updated ${driftId} to non-compliant configuration — mapped BNM RMiT, ISO 27001, and NIST CSF 2.0 controls flagged as DRIFT.`
+            : `Restored hardened baseline for ${driftId} and refreshed SHA-256 evidence digest.`,
         controls: {
           ...prev.controls,
           [driftId]: {
@@ -191,24 +242,26 @@ export function GrcCompliancePage({ onBack }: GrcCompliancePageProps) {
             auditorNote:
               nextPosture === 'DRIFT'
                 ? 'Live configuration drift detected by posture scanner.'
-                : 'Posture remediated by Cloud Engineer; awaiting Auditor verification.'
+                : 'Posture remediated by Cloud Engineer; evidence digest refreshed.'
           }
         },
         traps: {
           ...prev.traps,
-          iamDrift8A: prev.traps.iamDrift8A || (driftId === 'IAM_MFA_BYPASS' && action === 'INJECT_DRIFT'),
+          iamDrift8A:
+            prev.traps.iamDrift8A || (driftId === 'IAM_MFA_BYPASS' && action === 'INJECT_DRIFT'),
           backupWormDrift8B:
             prev.traps.backupWormDrift8B ||
             (driftId === 'BACKUP_WORM_DISABLED' && action === 'INJECT_DRIFT'),
           piiUnmaskedDrift8C:
-            prev.traps.piiUnmaskedDrift8C || (driftId === 'PII_UNMASKED' && action === 'INJECT_DRIFT')
+            prev.traps.piiUnmaskedDrift8C ||
+            (driftId === 'PII_UNMASKED' && action === 'INJECT_DRIFT')
         }
       };
     });
 
     recordSpan(
       createGrcSpan({
-        sessionId,
+        sessionId: currentSid,
         method: 'POST',
         path: '/api/grc-compliance/posture',
         status: res.httpStatus,
@@ -225,10 +278,12 @@ export function GrcCompliancePage({ onBack }: GrcCompliancePageProps) {
     driftId: DriftControlId,
     action: 'MARK_PASS' | 'FLAG_REMEDIATION'
   ) => {
+    const currentSid = sessionIdRef.current;
     setBusyControl(driftId);
     const t0 = performance.now();
     const currentCtrl = state.controls[driftId];
-    const res = await callVerifyApi(sessionId, action, driftId, currentCtrl);
+    const res = await callVerifyApi(currentSid, action, driftId, currentCtrl);
+    if (sessionIdRef.current !== currentSid) return;
     const latencyMs = Math.max(4, Math.round(performance.now() - t0));
     const timestamp = new Date().toISOString();
 
@@ -248,7 +303,7 @@ export function GrcCompliancePage({ onBack }: GrcCompliancePageProps) {
         ...prev,
         selectedControlId: driftId,
         lastErrorBanner: null,
-        lastActionSummary: `Auditor verified ${driftId} PASS with cryptographic SHA-256 evidence link.`,
+        lastActionSummary: `Verified ${driftId} PASS with cryptographic SHA-256 evidence digest.`,
         controls: {
           ...prev.controls,
           [driftId]: {
@@ -271,7 +326,7 @@ export function GrcCompliancePage({ onBack }: GrcCompliancePageProps) {
         ...prev,
         selectedControlId: driftId,
         lastErrorBanner: null,
-        lastActionSummary: `Remediation ticket dispatched to Cloud Engineer (Rohan Verma) for ${driftId}.`,
+        lastActionSummary: `Remediation request logged for ${driftId}.`,
         controls: {
           ...prev.controls,
           [driftId]: {
@@ -288,7 +343,7 @@ export function GrcCompliancePage({ onBack }: GrcCompliancePageProps) {
 
     recordSpan(
       createGrcSpan({
-        sessionId,
+        sessionId: currentSid,
         method: 'POST',
         path: '/api/grc-compliance/verify',
         status: res.httpStatus,
@@ -306,16 +361,6 @@ export function GrcCompliancePage({ onBack }: GrcCompliancePageProps) {
     [sessionId, state]
   );
 
-  const handleCopyAttestation = async () => {
-    try {
-      await navigator.clipboard.writeText(JSON.stringify(attestationPack, null, 2));
-      setCopiedPack(true);
-      window.setTimeout(() => setCopiedPack(false), 2000);
-    } catch {
-      // Clipboard fallback ignored
-    }
-  };
-
   const handleDownloadAttestation = () => {
     const blob = new Blob([JSON.stringify(attestationPack, null, 2)], {
       type: 'application/json'
@@ -323,7 +368,7 @@ export function GrcCompliancePage({ onBack }: GrcCompliancePageProps) {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `0trust-grc-attestation-${sessionId}.json`;
+    a.download = `lab8-grc-attestation-${sessionId}.json`;
     a.click();
     URL.revokeObjectURL(url);
   };
@@ -373,543 +418,563 @@ export function GrcCompliancePage({ onBack }: GrcCompliancePageProps) {
   );
 
   return (
-    <div className="mission-control" style={{ paddingBottom: '88px' }}>
-      {/* Top Bar */}
-      <header className="lab-header">
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
-          <button type="button" className="btn btn-sm" onClick={onBack}>
-            <ArrowLeft size={14} /> All Labs
-          </button>
-          <div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-              <span style={{ fontWeight: 700, fontSize: '1.05rem', color: 'var(--text-primary)' }}>
-                Continuous Compliance &amp; BNM RMiT / ISO 27001 Mapper
-              </span>
-              <span className="badge badge-blue">Guided Sandbox · $0.00/mo</span>
-              {readiness.driftedCount > 0 ? (
-                <span className="badge badge-crimson">
-                  Audit Score: {readiness.scorePct}% ({readiness.driftedCount} Drift)
-                </span>
-              ) : (
-                <span className="badge badge-emerald">
-                  Audit Score: {readiness.scorePct}% ({readiness.statusLabel})
-                </span>
-              )}
-            </div>
-            <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: '2px' }}>
-              Lab 8 · Archetype D (Audit &amp; Drift Investigation) · Session{' '}
-              <span className="mono">{sessionId}</span> · 1h TTL
-            </div>
-          </div>
-        </div>
-
-        <button type="button" className="btn btn-sm" onClick={handleReset}>
-          <RotateCcw size={14} /> Reset
-        </button>
-      </header>
-
-      {/* 2-Seat Role Switcher */}
-      <RoleSwitcherBar
-        seats={seats}
-        activeSeatId={activeSeat}
-        onSelectSeat={setActiveSeat}
-        ariaLabel="GRC Compliance 2-Seat Role Switcher"
-      />
-
-      {/* 4-Phase Stepper */}
-      <nav aria-label="4-Phase Cognitive Arc" className="stepper-bar">
-        {STAGE_ITEMS.map((item) => {
-          const isActive = state.stage === item.id;
-          const isDone = state.stage > item.id;
-          return (
-            <button
-              key={item.id}
-              type="button"
-              onClick={() => handleSelectStage(item.id)}
-              className={`stage-pill ${isActive ? 'active' : ''} ${isDone ? 'completed' : ''}`}
-            >
-              <span className="stage-number">{item.id}</span>
-              <span>
-                <strong>{item.label}</strong>
-                <span style={{ display: 'block', fontSize: '0.72rem', opacity: 0.85 }}>
-                  {item.subtitle}
-                </span>
-              </span>
-            </button>
-          );
-        })}
-      </nav>
-
-      {/* Status / Fail-Closed 409 Alert Banner */}
-      {state.lastErrorBanner && (
-        <div
-          role="alert"
-          style={{
-            marginTop: '14px',
-            padding: '12px 16px',
-            borderRadius: '10px',
-            backgroundColor: '#fef2f2',
-            border: '1px solid #fecaca',
-            color: '#991b1b',
-            display: 'flex',
-            alignItems: 'flex-start',
-            gap: '10px'
-          }}
-        >
-          <ShieldAlert size={18} style={{ flexShrink: 0, marginTop: '2px' }} />
-          <div style={{ fontSize: '0.88rem' }}>
-            <strong>409 EVIDENCE_DRIFT_MISMATCH (Fail-Closed):</strong> {state.lastErrorBanner}
-          </div>
-        </div>
-      )}
-
-      {state.lastActionSummary && !state.lastErrorBanner && (
+    <div
+      style={{
+        minHeight: '100vh',
+        display: 'flex',
+        flexDirection: 'column',
+        backgroundColor: 'var(--bg-canvas)',
+        color: 'var(--text-primary)'
+      }}
+    >
+      {/* 1. Compact AppShell Top Header */}
+      <header
+        style={{
+          position: 'sticky',
+          top: 0,
+          zIndex: 40,
+          backgroundColor: 'rgba(255, 255, 255, 0.96)',
+          backdropFilter: 'blur(8px)',
+          borderBottom: '1px solid var(--border-subtle)'
+        }}
+      >
         <div
           style={{
-            marginTop: '14px',
-            padding: '10px 14px',
-            borderRadius: '10px',
-            backgroundColor: '#f0fdf4',
-            border: '1px solid #bbf7d0',
-            color: '#166534',
-            fontSize: '0.85rem',
+            maxWidth: '1280px',
+            margin: '0 auto',
+            padding: '0 16px',
+            height: '56px',
             display: 'flex',
             alignItems: 'center',
-            gap: '8px'
+            justifyContent: 'space-between',
+            gap: '12px'
           }}
         >
-          <CheckCircle2 size={16} style={{ flexShrink: 0 }} />
-          <span>{state.lastActionSummary}</span>
-        </div>
-      )}
-
-      {/* Phase 1: Discovery */}
-      {state.stage === 1 && (
-        <section style={{ marginTop: '18px', display: 'grid', gap: '16px' }}>
-          <div className="surface-card">
-            <div className="section-header" style={{ marginBottom: '12px' }}>
-              <h2 className="section-title" style={{ fontSize: '1.1rem' }}>
-                Phase 1 · Discovery: Posture-to-Regulation Architecture
-              </h2>
-              <p className="section-subtitle">
-                Continuous compliance eliminates manual screenshot audits. Cloud posture scanners
-                feed cryptographic SHA-256 evidence into a single cross-framework mapper covering{' '}
-                <strong>BNM RMiT</strong>, <strong>ISO/IEC 27001:2022</strong>, and{' '}
-                <strong>NIST CSF 2.0</strong>.
-              </p>
-            </div>
-
-            <div className="grid-3">
-              <div className="surface-card" style={{ padding: '14px' }}>
-                <span className="badge badge-blue">1. Cloud &amp; CI Scanners</span>
-                <h3 style={{ fontSize: '0.95rem', margin: '8px 0 4px' }}>
-                  Live Posture Telemetry
-                </h3>
-                <p style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', margin: 0 }}>
-                  Steampipe/Prowler IAM check, Cloudflare R2 Object Lock auditor, and CI DLP
-                  classifier evaluate live cloud state.
-                </p>
-              </div>
-
-              <div className="surface-card" style={{ padding: '14px' }}>
-                <span className="badge badge-emerald">2. Cryptographic Evidence</span>
-                <h3 style={{ fontSize: '0.95rem', margin: '8px 0 4px' }}>
-                  SHA-256 Digest + Timestamp
-                </h3>
-                <p style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', margin: 0 }}>
-                  Every posture evaluation hashes the resource state into an immutable{' '}
-                  <span className="mono">lab8:grc:&lt;sid&gt;</span> record (1h TTL).
-                </p>
-              </div>
-
-              <div className="surface-card" style={{ padding: '14px' }}>
-                <span className="badge badge-amber">3. Fail-Closed Auditor Gate</span>
-                <h3 style={{ fontSize: '0.95rem', margin: '8px 0 4px' }}>
-                  409 Evidence Integrity
-                </h3>
-                <p style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', margin: 0 }}>
-                  Auditors cannot manually override a <span className="mono">DRIFT</span> control to{' '}
-                  <span className="mono">PASS</span> without underlying Cloud Engineer remediation.
-                </p>
-              </div>
-            </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0 }}>
+            <button
+              type="button"
+              onClick={onBack}
+              className="btn btn-sm"
+              style={{ padding: '5px 9px' }}
+              title="All Labs"
+            >
+              <ArrowLeft size={13} />
+              <span>All Labs</span>
+            </button>
+            <span
+              style={{
+                fontSize: '14px',
+                fontWeight: 700,
+                color: 'var(--text-primary)',
+                whiteSpace: 'nowrap'
+              }}
+            >
+              Continuous Compliance &amp; BNM RMiT / ISO 27001 Mapper
+            </span>
+            <span
+              className={`badge ${
+                readiness.driftedCount > 0
+                  ? 'badge-crimson'
+                  : readiness.verifiedCount === POSTURE_CHECK_CATALOG.length
+                    ? 'badge-emerald'
+                    : 'badge-amber'
+              }`}
+              style={{ whiteSpace: 'nowrap', fontSize: '12px' }}
+            >
+              {globalStatusLabel}
+            </span>
           </div>
 
-          {/* Live 3x3 Cross-Framework Matrix */}
-          <div className="surface-card">
-            <h3 style={{ fontSize: '0.98rem', margin: '0 0 10px' }}>
-              Cross-Framework Control Matrix (Live Status)
-            </h3>
-            <div style={{ overflowX: 'auto' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.82rem' }}>
-                <thead>
-                  <tr style={{ borderBottom: '1px solid var(--border-subtle)', textAlign: 'left' }}>
-                    <th style={{ padding: '8px' }}>Posture Check</th>
-                    <th style={{ padding: '8px' }}>BNM RMiT</th>
-                    <th style={{ padding: '8px' }}>ISO/IEC 27001:2022</th>
-                    <th style={{ padding: '8px' }}>NIST CSF 2.0</th>
-                    <th style={{ padding: '8px' }}>Status</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {POSTURE_CHECK_CATALOG.map((def) => {
-                    const live = state.controls[def.id];
-                    return (
-                      <tr
-                        key={def.id}
-                        style={{ borderBottom: '1px solid var(--border-subtle)' }}
-                      >
-                        <td style={{ padding: '8px', fontWeight: 600 }}>
-                          {def.checkId} · {def.title}
-                        </td>
-                        <td style={{ padding: '8px' }}>{def.mappings[0].clauseId}</td>
-                        <td style={{ padding: '8px' }}>{def.mappings[1].clauseId}</td>
-                        <td style={{ padding: '8px' }}>{def.mappings[2].clauseId}</td>
-                        <td style={{ padding: '8px' }}>
-                          {live.postureStatus === 'PASS' ? (
-                            <span className="badge badge-emerald">PASS</span>
-                          ) : (
-                            <span className="badge badge-crimson">DRIFT</span>
-                          )}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
+            <RoleSwitcherBar
+              seats={seats}
+              activeSeatId={activeSeat}
+              onSelectSeat={setActiveSeat}
+              variant="dropdown"
+              ariaLabel="Switch workspace persona"
+            />
 
-            <div style={{ marginTop: '14px', display: 'flex', justifyContent: 'flex-end' }}>
+            <div id="tour-lab-controls" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
               <button
                 type="button"
-                className="btn btn-primary"
-                onClick={() => handleSelectStage(2)}
+                onClick={startLabTour}
+                className="btn btn-sm"
+                style={{
+                  backgroundColor: 'var(--accent-primary-dim)',
+                  borderColor: 'var(--accent-primary-border)',
+                  color: 'var(--accent-primary-ink)',
+                  fontSize: '13px'
+                }}
               >
-                Continue to Phase 2: Drift Injection <ArrowRight size={15} />
+                <Compass size={14} />
+                <span>Lab Tour</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => void handleReset()}
+                className="btn btn-sm"
+                style={{ fontSize: '13px' }}
+              >
+                <RotateCcw size={14} />
+                <span>Reset</span>
               </button>
             </div>
           </div>
-        </section>
-      )}
+        </div>
+      </header>
 
-      {/* Phase 2 & Phase 3: Active 2-Seat Workspace */}
-      {(state.stage === 2 || state.stage === 3) && (
-        <section style={{ marginTop: '18px', display: 'grid', gap: '16px' }}>
-          <div className="surface-card">
-            <div
+      {/* 2. Center Role Workspace */}
+      <main id="tour-workspace" style={{ flex: 1, padding: '16px', paddingBottom: '88px' }}>
+        <div
+          style={{
+            maxWidth: '1280px',
+            margin: '0 auto',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '14px'
+          }}
+        >
+          {/* ==================== SEAT 1: ROHAN VERMA — CLOUD RESOURCE CONFIG ==================== */}
+          {activeSeat === 'cloud-engineer' && (
+            <section
+              aria-label="Cloud Resource Configuration"
               style={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                flexWrap: 'wrap',
-                gap: '10px',
-                marginBottom: '12px'
+                backgroundColor: 'var(--bg-surface)',
+                border: '1px solid var(--border-subtle)',
+                borderRadius: 'var(--radius-lg)',
+                boxShadow: 'var(--shadow-sm)',
+                overflow: 'hidden'
               }}
             >
-              <div>
-                <h2 className="section-title" style={{ fontSize: '1.08rem', margin: 0 }}>
-                  {state.stage === 2
-                    ? 'Phase 2 · Understanding: Inject Live Drift & Observe Multi-Framework Impact'
-                    : 'Phase 3 · Practice: Auditor Workbench, 409 Trap & Remediation Loop'}
-                </h2>
-                <p style={{ fontSize: '0.83rem', color: 'var(--text-secondary)', margin: '4px 0 0' }}>
-                  Active Seat:{' '}
-                  <strong>
-                    {activeSeat === 'cloud-engineer'
-                      ? 'Rohan Verma (Cloud Engineer · Posture & Drift)'
-                      : 'Claire Dubois (GRC Auditor · Evidence Reviewer)'}
-                  </strong>
-                </p>
-              </div>
-              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                <button
-                  type="button"
-                  className="btn btn-sm"
-                  onClick={() =>
-                    setActiveSeat(activeSeat === 'cloud-engineer' ? 'auditor' : 'cloud-engineer')
-                  }
-                >
-                  Switch to {activeSeat === 'cloud-engineer' ? 'Auditor Seat' : 'Cloud Engineer Seat'}
-                </button>
-                {state.stage === 2 ? (
-                  <button
-                    type="button"
-                    className="btn btn-primary btn-sm"
-                    onClick={() => {
-                      setActiveSeat('auditor');
-                      handleSelectStage(3);
-                    }}
-                  >
-                    Go to Phase 3 (Auditor Workbench) <ArrowRight size={14} />
-                  </button>
-                ) : (
-                  <button
-                    type="button"
-                    className="btn btn-primary btn-sm"
-                    onClick={() => handleSelectStage(4)}
-                  >
-                    Go to Phase 4 (Reflection) <ArrowRight size={14} />
-                  </button>
-                )}
-              </div>
-            </div>
-
-            {/* Control Cards */}
-            <div style={{ display: 'grid', gap: '14px' }}>
-              {POSTURE_CHECK_CATALOG.map((def) => {
-                const live = state.controls[def.id];
-                const isDrift = live.postureStatus === 'DRIFT';
-                const isSelected = state.selectedControlId === def.id;
-                const isBusy = busyControl === def.id;
-
-                return (
-                  <div
-                    key={def.id}
-                    onClick={() => setState((prev) => ({ ...prev, selectedControlId: def.id }))}
-                    style={{
-                      padding: '14px',
-                      borderRadius: '10px',
-                      border: isSelected
-                        ? '2px solid var(--accent-blue, #2563eb)'
-                        : '1px solid var(--border-subtle)',
-                      backgroundColor: isDrift ? '#fff5f5' : '#ffffff',
-                      cursor: 'pointer'
-                    }}
-                  >
-                    <div
-                      style={{
-                        display: 'flex',
-                        justifyContent: 'space-between',
-                        alignItems: 'flex-start',
-                        flexWrap: 'wrap',
-                        gap: '8px'
-                      }}
-                    >
-                      <div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                          <span className="mono" style={{ fontSize: '0.78rem', fontWeight: 600 }}>
-                            {def.checkId}
-                          </span>
-                          <strong style={{ fontSize: '0.96rem' }}>{def.title}</strong>
-                          {isDrift ? (
-                            <span className="badge badge-crimson">POSTURE: DRIFT</span>
-                          ) : (
-                            <span className="badge badge-emerald">POSTURE: PASS</span>
-                          )}
-                          {live.auditorStatus === 'VERIFIED_PASS' && (
-                            <span className="badge badge-emerald">AUDITOR: VERIFIED PASS</span>
-                          )}
-                          {live.auditorStatus === 'FLAGGED_DRIFT' && (
-                            <span className="badge badge-crimson">AUDITOR: FLAGGED DRIFT</span>
-                          )}
-                          {live.auditorStatus === 'REMEDIATION_REQUESTED' && (
-                            <span className="badge badge-amber">REMEDIATION REQUESTED</span>
-                          )}
-                        </div>
-                        <div
-                          className="mono"
-                          style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '4px' }}
-                        >
-                          {def.resourceArn} · SHA-256: {live.evidenceSha256.slice(0, 18)}…
-                        </div>
-                      </div>
-
-                      {/* Seat-Specific Actions */}
-                      <div
-                        style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        {activeSeat === 'cloud-engineer' ? (
-                          <>
-                            <button
-                              type="button"
-                              className="btn btn-danger-soft btn-sm"
-                              disabled={isBusy || isDrift}
-                              onClick={() => handlePostureAction(def.id, 'INJECT_DRIFT')}
-                            >
-                              <AlertTriangle size={14} /> {def.driftLabel}
-                            </button>
-                            <button
-                              type="button"
-                              className="btn btn-emerald btn-sm"
-                              disabled={isBusy || !isDrift}
-                              onClick={() => handlePostureAction(def.id, 'REMEDIATE')}
-                            >
-                              <Wrench size={14} /> {def.remediationLabel}
-                            </button>
-                          </>
-                        ) : (
-                          <>
-                            <button
-                              type="button"
-                              className="btn btn-amber-soft btn-sm"
-                              disabled={isBusy}
-                              onClick={() => handleAuditorVerify(def.id, 'FLAG_REMEDIATION')}
-                            >
-                              <ShieldAlert size={14} /> Flag &amp; Request Remediation
-                            </button>
-                            <button
-                              type="button"
-                              className="btn btn-emerald btn-sm"
-                              disabled={isBusy}
-                              onClick={() => handleAuditorVerify(def.id, 'MARK_PASS')}
-                            >
-                              <ClipboardCheck size={14} /> Mark Clause PASS
-                            </button>
-                          </>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* 3-Framework Clauses Row */}
-                    <div className="grid-3" style={{ marginTop: '12px' }}>
-                      {def.mappings.map((m) => (
-                        <div
-                          key={m.framework}
-                          style={{
-                            padding: '10px',
-                            borderRadius: '8px',
-                            backgroundColor: isDrift ? '#fef2f2' : '#f8fafc',
-                            border: isDrift ? '1px solid #fecaca' : '1px solid var(--border-subtle)'
-                          }}
-                        >
-                          <div
-                            style={{
-                              display: 'flex',
-                              justifyContent: 'space-between',
-                              alignItems: 'center',
-                              fontSize: '0.75rem',
-                              fontWeight: 700
-                            }}
-                          >
-                            <span>{m.framework}</span>
-                            <span className={isDrift ? 'badge badge-crimson' : 'badge badge-emerald'}>
-                              {isDrift ? 'DRIFT' : 'PASS'}
-                            </span>
-                          </div>
-                          <div style={{ fontSize: '0.8rem', fontWeight: 600, marginTop: '4px' }}>
-                            {m.clauseId} · {m.clauseTitle}
-                          </div>
-                          <div style={{ fontSize: '0.74rem', color: 'var(--text-secondary)', marginTop: '2px' }}>
-                            {m.requirementSummary}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        </section>
-      )}
-
-      {/* Phase 4: Reflection */}
-      {state.stage === 4 && (
-        <section style={{ marginTop: '18px', display: 'grid', gridTemplateColumns: 'minmax(0, 1fr)', gap: '16px' }}>
-          <div className="surface-card" style={{ minWidth: 0 }}>
-            <div
-              style={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                flexWrap: 'wrap',
-                gap: '12px'
-              }}
-            >
-              <div>
-                <h2 className="section-title" style={{ fontSize: '1.1rem', margin: 0 }}>
-                  Phase 4 · Reflection: Audit-Readiness &amp; Compliance Attestation Pack
-                </h2>
-                <p style={{ fontSize: '0.84rem', color: 'var(--text-secondary)', margin: '4px 0 0' }}>
-                  Cross-framework coverage across BNM RMiT, ISO/IEC 27001:2022, and NIST CSF 2.0
-                  with cryptographic SHA-256 evidence links.
-                </p>
-              </div>
-              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                <button type="button" className="btn btn-sm" onClick={handleCopyAttestation}>
-                  <Copy size={14} /> {copiedPack ? 'Copied JSON' : 'Copy Attestation JSON'}
-                </button>
-                <button
-                  type="button"
-                  className="btn btn-primary btn-sm"
-                  onClick={handleDownloadAttestation}
-                >
-                  <Download size={14} /> Export Attestation Pack
-                </button>
-              </div>
-            </div>
-
-            <div className="grid-3" style={{ marginTop: '14px' }}>
-              <div className="surface-card" style={{ padding: '14px' }}>
-                <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
-                  Audit-Readiness Score
-                </div>
-                <div style={{ fontSize: '1.6rem', fontWeight: 700, marginTop: '4px' }}>
-                  {readiness.scorePct}%
-                </div>
-                <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
-                  {readiness.verifiedCount} / {POSTURE_CHECK_CATALOG.length} controls verified PASS
-                </div>
-              </div>
-
-              <div className="surface-card" style={{ padding: '14px' }}>
-                <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
-                  Fail-Closed 409 Guardrail
-                </div>
-                <div style={{ fontSize: '1.1rem', fontWeight: 700, marginTop: '6px' }}>
-                  {state.traps.auditorOverrideBlocked409 ? (
-                    <span className="badge badge-emerald">409 Trap Verified</span>
-                  ) : (
-                    <span className="badge badge-amber">Not Yet Tested</span>
-                  )}
-                </div>
-                <div style={{ fontSize: '0.76rem', color: 'var(--text-secondary)', marginTop: '4px' }}>
-                  Blocks manual PASS override when posture is DRIFT.
-                </div>
-              </div>
-
-              <div className="surface-card" style={{ padding: '14px' }}>
-                <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
-                  Drift Scenarios Explored
-                </div>
-                <div style={{ fontSize: '0.82rem', marginTop: '6px', display: 'grid', gap: '4px' }}>
-                  <span>
-                    {state.traps.iamDrift8A ? '✓' : '○'} 8A: IAM Wildcard / MFA Bypass
-                  </span>
-                  <span>
-                    {state.traps.backupWormDrift8B ? '✓' : '○'} 8B: Backup WORM Disabled
-                  </span>
-                  <span>
-                    {state.traps.piiUnmaskedDrift8C ? '✓' : '○'} 8C: Unencrypted / Unmasked PII
-                  </span>
-                </div>
-              </div>
-            </div>
-
-            <div style={{ marginTop: '14px', minWidth: 0, maxWidth: '100%' }}>
-              <pre
-                className="mono"
+              <div
                 style={{
-                  fontSize: '0.74rem',
-                  padding: '12px',
-                  borderRadius: '8px',
+                  padding: '10px 18px',
                   backgroundColor: '#0f172a',
-                  color: '#e2e8f0',
-                  overflowX: 'auto',
-                  maxWidth: '100%',
-                  maxHeight: '260px',
-                  margin: 0
+                  color: '#ffffff',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  gap: '12px',
+                  flexWrap: 'wrap'
                 }}
               >
-                {JSON.stringify(attestationPack, null, 2)}
-              </pre>
-            </div>
-          </div>
-        </section>
-      )}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <span
+                    style={{
+                      width: '26px',
+                      height: '26px',
+                      borderRadius: '5px',
+                      backgroundColor: '#2563eb',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      fontWeight: 700,
+                      fontSize: '12px'
+                    }}
+                  >
+                    <Cloud size={15} />
+                  </span>
+                  <span style={{ fontSize: '15px', fontWeight: 700 }}>
+                    Cloud Resource Configuration Console
+                  </span>
+                </div>
+                <span style={{ fontSize: '13.5px', color: '#e2e8f0' }}>
+                  Rohan Verma · Cloud Engineer
+                </span>
+              </div>
 
-      {/* Sticky Bottom X-Ray Telemetry Drawer */}
+              <div style={{ padding: '18px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                <div>
+                  <h2 style={{ fontSize: '15.5px', fontWeight: 700, margin: 0 }}>
+                    Production Cloud Resources &amp; Live Posture
+                  </h2>
+                  <p style={{ fontSize: '13.5px', color: 'var(--text-secondary)', margin: '2px 0 0' }}>
+                    Manage production IAM, R2 Object Lock, and KMS/DLP configurations. Changes immediately re-compute SHA-256 posture evidence.
+                  </p>
+                </div>
+
+                {state.lastActionSummary && (
+                  <div
+                    style={{
+                      padding: '12px 14px',
+                      borderRadius: '8px',
+                      backgroundColor: 'var(--accent-primary-dim)',
+                      border: '1px solid var(--accent-primary-border)',
+                      color: 'var(--accent-primary-ink)',
+                      fontSize: '13.5px'
+                    }}
+                  >
+                    {state.lastActionSummary}
+                  </div>
+                )}
+
+                <div className="data-table-wrapper">
+                  <table className="data-table">
+                    <thead>
+                      <tr>
+                        <th>Control &amp; Resource</th>
+                        <th>Scanner</th>
+                        <th>Posture Status</th>
+                        <th>Audit Queue</th>
+                        <th style={{ textAlign: 'right' }}>Configuration Action</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {POSTURE_CHECK_CATALOG.map((def) => {
+                        const live = state.controls[def.id];
+                        const isDrifted = live.postureStatus === 'DRIFT';
+                        const isSelected = state.selectedControlId === def.id;
+                        const isBusy = busyControl === def.id;
+
+                        return (
+                          <tr
+                            key={def.id}
+                            className={`clickable-row${isSelected ? ' selected-row' : ''}`}
+                            onClick={() =>
+                              setState((prev) => ({ ...prev, selectedControlId: def.id }))
+                            }
+                          >
+                            <td>
+                              <div style={{ fontWeight: 700, fontSize: '14px' }}>
+                                {def.checkId} · {def.title}
+                              </div>
+                              <div className="mono" style={{ fontSize: '12.5px', color: 'var(--text-muted)' }}>
+                                {def.resourceArn}
+                              </div>
+                            </td>
+                            <td className="mono" style={{ fontSize: '12.5px' }}>
+                              {def.scanner}
+                            </td>
+                            <td>
+                              {isDrifted ? (
+                                <span className="badge badge-crimson">DRIFT</span>
+                              ) : (
+                                <span className="badge badge-emerald">COMPLIANT</span>
+                              )}
+                            </td>
+                            <td>
+                              {live.remediationRequested ? (
+                                <span className="badge badge-amber">REMEDIATION REQ</span>
+                              ) : isDrifted ? (
+                                <span className="badge badge-crimson">FLAGGED</span>
+                              ) : (
+                                <span className="badge">NO OPEN TICKETS</span>
+                              )}
+                            </td>
+                            <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
+                              {isDrifted ? (
+                                <button
+                                  type="button"
+                                  className="btn btn-primary btn-sm"
+                                  style={{ fontSize: '13px', padding: '6px 12px' }}
+                                  disabled={busyControl !== null}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    void handlePostureAction(def.id, 'REMEDIATE');
+                                  }}
+                                >
+                                  {isBusy ? 'Applying…' : 'Enforce Baseline'}
+                                </button>
+                              ) : (
+                                <button
+                                  type="button"
+                                  className="btn btn-sm"
+                                  style={{ fontSize: '13px', padding: '6px 12px' }}
+                                  disabled={busyControl !== null}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    void handlePostureAction(def.id, 'INJECT_DRIFT');
+                                  }}
+                                >
+                                  {isBusy ? 'Updating…' : 'Switch to Legacy Config'}
+                                </button>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Live Resource Configuration JSON Preview */}
+                <div
+                  style={{
+                    border: '1px solid var(--border-subtle)',
+                    borderRadius: 'var(--radius-md)',
+                    backgroundColor: 'var(--bg-canvas)',
+                    padding: '14px 16px',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '8px'
+                  }}
+                >
+                  <div
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      flexWrap: 'wrap',
+                      gap: '8px'
+                    }}
+                  >
+                    <div style={{ fontSize: '14px', fontWeight: 700 }}>
+                      Active Configuration — {selectedDef.checkId} ({selectedDef.title})
+                    </div>
+                    <span className="mono" style={{ fontSize: '12.5px', color: 'var(--text-muted)' }}>
+                      SHA-256: {selectedLive.evidenceSha256.slice(0, 16)}…
+                    </span>
+                  </div>
+                  <pre
+                    className="mono"
+                    style={{
+                      margin: 0,
+                      padding: '12px 14px',
+                      borderRadius: 'var(--radius-sm)',
+                      backgroundColor: 'var(--bg-surface)',
+                      border: '1px solid var(--border-subtle)',
+                      fontSize: '13px',
+                      lineHeight: 1.55,
+                      overflowX: 'auto',
+                      color: 'var(--text-primary)'
+                    }}
+                  >
+                    {JSON.stringify(
+                      selectedLive.postureStatus === 'DRIFT'
+                        ? selectedDef.driftedConfig
+                        : selectedDef.baselineConfig,
+                      null,
+                      2
+                    )}
+                  </pre>
+                </div>
+              </div>
+            </section>
+          )}
+
+          {/* ==================== SEAT 2: CLAIRE DUBOIS — COMPLIANCE CONTROL & EVIDENCE MATRIX ==================== */}
+          {activeSeat === 'auditor' && (
+            <section
+              aria-label="Compliance Control and Evidence Matrix"
+              style={{
+                backgroundColor: 'var(--bg-surface)',
+                border: '1px solid var(--border-subtle)',
+                borderRadius: 'var(--radius-lg)',
+                boxShadow: 'var(--shadow-sm)',
+                overflow: 'hidden'
+              }}
+            >
+              <div
+                style={{
+                  padding: '10px 18px',
+                  backgroundColor: 'var(--bg-canvas)',
+                  borderBottom: '1px solid var(--border-subtle)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  gap: '12px',
+                  flexWrap: 'wrap'
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <span
+                    style={{
+                      width: '26px',
+                      height: '26px',
+                      borderRadius: '5px',
+                      backgroundColor: '#7c3aed',
+                      color: '#ffffff',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      fontWeight: 700,
+                      fontSize: '12px'
+                    }}
+                  >
+                    GR
+                  </span>
+                  <span style={{ fontSize: '15px', fontWeight: 700 }}>
+                    Compliance Control &amp; Evidence Matrix
+                  </span>
+                </div>
+                <span style={{ fontSize: '13.5px', color: 'var(--text-secondary)', fontWeight: 600 }}>
+                  Claire Dubois · GRC Auditor
+                </span>
+              </div>
+
+              <div style={{ padding: '18px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    flexWrap: 'wrap',
+                    gap: '12px'
+                  }}
+                >
+                  <div>
+                    <h2 style={{ fontSize: '15.5px', fontWeight: 700, margin: 0 }}>
+                      Regulatory Control Matrix (BNM RMiT · ISO 27001:2022 · NIST CSF 2.0)
+                    </h2>
+                    <p style={{ fontSize: '13.5px', color: 'var(--text-secondary)', margin: '2px 0 0' }}>
+                      Readiness: <strong>{readiness.scorePct}%</strong> ({readiness.verifiedCount}/{POSTURE_CHECK_CATALOG.length} verified PASS). Sign-off fails closed (HTTP 409) whenever live posture is drifted.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    className="btn btn-sm"
+                    style={{ fontSize: '13px', padding: '7px 12px' }}
+                    onClick={handleDownloadAttestation}
+                  >
+                    <Download size={14} />
+                    <span>Export Attestation JSON</span>
+                  </button>
+                </div>
+
+                {state.lastErrorBanner && (
+                  <div
+                    role="alert"
+                    style={{
+                      padding: '12px 14px',
+                      borderRadius: '8px',
+                      backgroundColor: 'var(--accent-crimson-dim)',
+                      border: '1px solid var(--accent-crimson-border)',
+                      color: 'var(--accent-crimson-ink)',
+                      fontSize: '13.5px'
+                    }}
+                  >
+                    <strong>Evidence Integrity Check Failed (HTTP 409):</strong>{' '}
+                    {state.lastErrorBanner}
+                  </div>
+                )}
+
+                {state.lastActionSummary && !state.lastErrorBanner && (
+                  <div
+                    style={{
+                      padding: '12px 14px',
+                      borderRadius: '8px',
+                      backgroundColor: 'var(--accent-emerald-dim)',
+                      border: '1px solid var(--accent-emerald-border)',
+                      color: 'var(--accent-emerald-ink)',
+                      fontSize: '13.5px'
+                    }}
+                  >
+                    {state.lastActionSummary}
+                  </div>
+                )}
+
+                <div className="data-table-wrapper">
+                  <table className="data-table">
+                    <thead>
+                      <tr>
+                        <th>Control</th>
+                        <th>Regulatory Clauses</th>
+                        <th>Live Posture</th>
+                        <th>Evidence Digest</th>
+                        <th>Sign-Off Status</th>
+                        <th style={{ textAlign: 'right' }}>Action</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {POSTURE_CHECK_CATALOG.map((def) => {
+                        const live = state.controls[def.id];
+                        const isDrifted = live.postureStatus === 'DRIFT';
+                        const isVerified =
+                          !isDrifted && live.auditorStatus === 'VERIFIED_PASS';
+                        const isBusy = busyControl === def.id;
+
+                        return (
+                          <tr
+                            key={def.id}
+                            className={`clickable-row${
+                              state.selectedControlId === def.id ? ' selected-row' : ''
+                            }`}
+                            onClick={() =>
+                              setState((prev) => ({ ...prev, selectedControlId: def.id }))
+                            }
+                          >
+                            <td>
+                              <div style={{ fontWeight: 700, fontSize: '14px' }}>
+                                {def.checkId} · {def.title}
+                              </div>
+                              <div className="mono" style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
+                                {def.resourceArn}
+                              </div>
+                            </td>
+                            <td>
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                {def.mappings.map((m) => (
+                                  <span
+                                    key={`${def.id}-${m.framework}`}
+                                    style={{ fontSize: '12.5px', color: 'var(--text-secondary)' }}
+                                  >
+                                    <strong>{m.framework}:</strong> {m.clauseId}
+                                  </span>
+                                ))}
+                              </div>
+                            </td>
+                            <td>
+                              {isDrifted ? (
+                                <span className="badge badge-crimson">DRIFT</span>
+                              ) : (
+                                <span className="badge badge-emerald">PASS</span>
+                              )}
+                            </td>
+                            <td className="mono" style={{ fontSize: '12.5px' }}>
+                              {live.evidenceSha256.slice(0, 12)}…
+                            </td>
+                            <td>
+                              {isVerified ? (
+                                <span className="badge badge-emerald">VERIFIED PASS</span>
+                              ) : live.auditorStatus === 'REMEDIATION_REQUESTED' ? (
+                                <span className="badge badge-amber">REMEDIATION REQ</span>
+                              ) : (
+                                <span className="badge badge-crimson">FLAGGED DRIFT</span>
+                              )}
+                            </td>
+                            <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
+                              <div style={{ display: 'inline-flex', gap: '6px', justifyContent: 'flex-end' }}>
+                                {isDrifted && (
+                                  <button
+                                    type="button"
+                                    className="btn btn-amber-soft btn-sm"
+                                    style={{ fontSize: '13px', padding: '6px 10px' }}
+                                    disabled={busyControl !== null || live.remediationRequested}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      void handleAuditorVerify(def.id, 'FLAG_REMEDIATION');
+                                    }}
+                                  >
+                                    {live.remediationRequested ? 'Requested' : 'Request Remediation'}
+                                  </button>
+                                )}
+                                <button
+                                  type="button"
+                                  className="btn btn-primary btn-sm"
+                                  style={{ fontSize: '13px', padding: '6px 10px' }}
+                                  disabled={busyControl !== null || isVerified}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    void handleAuditorVerify(def.id, 'MARK_PASS');
+                                  }}
+                                >
+                                  {isBusy ? 'Verifying…' : isVerified ? 'Verified' : 'Verify & Sign Off'}
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </section>
+          )}
+        </div>
+      </main>
+
+      {/* 3. Sticky-Bottom X-Ray Telemetry Drawer */}
       <XRayTelemetryDrawer
         spans={spans}
         decodedProofSections={decodedProofSections}
