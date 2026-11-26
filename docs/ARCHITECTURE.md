@@ -2,7 +2,7 @@
 
 > **Zoom Level:** 2.5 (Lab Assembly + Infrastructure Mapping)  
 > **Parent Overview:** [`0trust.dev/docs/ARCHITECTURE.md`](https://github.com/c2pig/0trust.dev/blob/main/docs/ARCHITECTURE.md)  
-> **Experience Archetype:** Archetype D — 2-Seat Audit & Drift Investigation (`Cloud Engineer · Posture & Drift` ↔ `GRC Auditor · Evidence Reviewer`)  
+> **Experience Archetype:** Role-Specific AppShell (`Cloud Engineer` ↔ `GRC Auditor`) with `driver.js` Orientation Overlay  
 > **Architecture SVG:** [`docs/diagrams/grc_compliance_architecture.svg`](diagrams/grc_compliance_architecture.svg)
 
 ---
@@ -11,9 +11,9 @@
 
 ```mermaid
 flowchart TB
-    subgraph Seats ["Archetype D: 2-Seat Audit & Drift Investigation (RoleSwitcherBar.tsx)"]
-        CE["Seat 1: Rohan Verma (Cloud Engineer · Posture & Drift)"]
-        AUD["Seat 2: Claire Dubois (GRC Auditor · Evidence Reviewer)"]
+    subgraph Seats ["AppShell Dropdown Role Switcher (RoleSwitcherBar.tsx · driver.js Tour)"]
+        CE["Seat 1: Rohan Verma (Cloud Engineer · Cloud Resource Config)"]
+        AUD["Seat 2: Claire Dubois (GRC Auditor · Compliance Control & Evidence Matrix)"]
     end
 
     subgraph Edge ["Same-Origin Routing (0trust-lab-router @ lab.0trust.dev)"]
