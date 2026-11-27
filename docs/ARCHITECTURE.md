@@ -71,20 +71,20 @@ flowchart TB
 
 ## 3. Security & Evidence Integrity Invariants Enforced
 
-1. **Origin Protection, Shared Runtime & Fail-Closed Router Secret (`server/runtime.ts`, `server/app.ts`, `Dockerfile`)**:
+1. **Origin Protection, Shared Runtime & Fail-Closed Router Secret (`server/runtime.ts`, `server/origin.ts`, `server/index.ts`, `server/app.ts`, `Dockerfile`)**:
    - `server/app.ts` is a thin wrapper delegating to canonical synced `server/runtime.ts` (`createBaseLabApp`, re-exporting `verifyRouterSecret`) and registering `POST /api/grc-compliance/posture` and `POST /api/grc-compliance/verify`.
    - Built with the canonical multi-stage `node:22-alpine` `Dockerfile` (`COPY src ./src` in Stage 1 builder; Stage 2 runner copies `/app/dist-server`, non-root `USER node`, port `8080`).
-   - All `/api/*` requests require a constant-time (`crypto.timingSafeEqual`) match on `X-Lab-Router-Secret` injected by `0trust-lab-router`; direct `*.run.app` calls fail closed with **`HTTP 403 FORBIDDEN_DIRECT_ORIGIN`**.
+   - All `/api/*` requests fail closed when `LAB_ROUTER_SECRET` is unset or mismatched (`403 FORBIDDEN_DIRECT_ORIGIN`) using SHA-256 digest normalization + `crypto.timingSafeEqual` on `X-Lab-Router-Secret`; `server/origin.ts` restricts localhost origin fallback to dev-only (`ENVIRONMENT=development`), and `server/index.ts` invokes `server.closeIdleConnections()` on shutdown alongside bounded OTLP flush in `server/runtime.ts`.
    - `GET /healthz` is exempt from `X-Lab-Router-Secret` and returns `200 { ok: true, lab: "grc-compliance" }` without accessing Firestore or secrets.
 2. **Synchronous Firestore TTL Enforcement (`server/kvAdapter.ts`)**:
-   - `FirestoreKvAdapter` stores documents in `kv_state` keyed as `grc-compliance:${encodeURIComponent(key)}` and synchronously returns `null` when `expireAt.toMillis() <= Date.now()` so expired sessions are never served during Firestore's background TTL reaper delay.
+   - `FirestoreKvAdapter` stores documents in `kv_state` keyed as `grc-compliance:${encodeURIComponent(key)}` and synchronously returns `null` when `expireAt?.toMillis()` guard evaluates `<= Date.now()` so expired sessions are never served during Firestore's background TTL reaper delay.
 3. **Fail-Closed Auditor Verification (`POST /api/grc-compliance/verify`)**:
    - Attempting `MARK_PASS` while the underlying posture check (`lab8:grc:<sid>`) is `DRIFT` fails closed with **`HTTP 409 EVIDENCE_DRIFT_MISMATCH`**.
 4. **Cryptographic SHA-256 Evidence Digests**:
    - Every posture transition and auditor sign-off computes a fresh SHA-256 digest over `(session_id, drift_id, posture_status, timestamp)` via WebCrypto (`crypto.subtle.digest`).
 5. **Strict Input Validation, Session Isolation & Telemetry Redaction**:
    - `MAX_BODY_BYTES = 65536`, `Set`-based enum validation (`INJECT_DRIFT | REMEDIATE | RESET`, `MARK_PASS | FLAG_REMEDIATION`), `sanitizeSessionId()`, `Cache-Control: no-store`, `expirationTtl: 3600`, and JWT signature redaction (`***REDACTED***`) with zero leakage of `X-Lab-Router-Secret` or `OTLP_AUTH_HEADER`.
-   - `_middleware.ts` imports shared OTLP/trace helpers from `functions/api/_telemetry.ts` and exports non-blocking OTLP `/v1/traces` + `/v1/logs` with `OTEL_SERVICE_NAME=zerotrust-lab-grc-compliance` authenticated via GCP Secret Manager `grafana-otlp-auth-header` (`OTLP_AUTH_HEADER`), and `XRayTelemetryDrawer.tsx` surfaces a `Global Live Dashboard ↗` link to `https://0trust.dev/observability`.
+   - `_middleware.ts` imports shared OTLP/trace helpers from `functions/api/_telemetry.ts` (including auth redaction), handles null-body responses, emits error-path telemetry, strips sensitive internal headers, and exports non-blocking OTLP `/v1/traces` + `/v1/logs` with `OTEL_SERVICE_NAME=zerotrust-lab-grc-compliance` authenticated via GCP Secret Manager `grafana-otlp-auth-header` (`OTLP_AUTH_HEADER`), while `XRayTelemetryDrawer.tsx` surfaces a `Global Live Dashboard ↗` link to `https://0trust.dev/observability`.
 6. **Terraform Remote GCS State (`infra/terraform/backend.tf`) & Shell Parity**:
    - Declares remote `backend "gcs"` (`bucket = "0trust-dev-tfstate"`, `prefix = "labs/grc-compliance"`) with `.terraform/` and `*.tfstate*` gitignored. Operators migrating local state should ensure the GCS bucket is provisioned with Uniform Bucket-Level Access, versioning enabled, and `public_access_prevention = "enforced"`, then run `terraform init -migrate-state`.
    - Shared shell, middleware, telemetry, runtime (`server/{kvAdapter,origin,runtime,index}.ts`), and `Dockerfile` are kept in parity with `c2pig/0trust.dev` via `scripts/sync-lab-shell.mjs`.
