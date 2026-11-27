@@ -88,3 +88,10 @@ flowchart TB
 6. **Terraform Remote GCS State (`infra/terraform/backend.tf`) & Shell Parity**:
    - Declares remote `backend "gcs"` (`bucket = "0trust-dev-tfstate"`, `prefix = "labs/grc-compliance"`) with `.terraform/` and `*.tfstate*` gitignored. Operators migrating local state should ensure the GCS bucket is provisioned with Uniform Bucket-Level Access, versioning enabled, and `public_access_prevention = "enforced"`, then run `terraform init -migrate-state`.
    - Shared shell, middleware, telemetry, runtime (`server/{kvAdapter,origin,runtime,index}.ts`), and `Dockerfile` are kept in parity with `c2pig/0trust.dev` via `scripts/sync-lab-shell.mjs`.
+
+---
+
+## Turnstile & 3-Minute Single-Session Lease Gate
+- **Frontend Guard (`src/components/LabLeaseGuard.tsx`, re-exported via `src/shell/index.ts`)**: `src/App.tsx` wraps `<GrcCompliancePage>` with `<LabLeaseGuard labSlug="grc-compliance" labTitle="Continuous Compliance & BNM RMiT / ISO 27001 Mapper">`.
+- **Edge Enforcement (`0trust-lab-router` + `LabLeaseDO`)**: Queries `GET /api/lease/grc-compliance/status`, renders the explicit Cloudflare Turnstile widget (`0x4AAAAAAGVF1oWC5CsFWn-J`) when available, acquires an `HttpOnly; Secure; SameSite=Lax` lease cookie (`lab_lease_grc-compliance`) via `POST /api/lease/grc-compliance/acquire` (180s hard cap, 25 calls/lease, 200 calls/UTC day), shows a countdown lock screen when occupied, and exposes a floating `MM:SS + End Lab` pill while active.
+- **Zero Engine Changes**: All existing same-origin `/api/grc-compliance/*` requests carry the `HttpOnly` lease cookie automatically; local development (`localhost` / `127.0.0.1`) and disabled lease configs pass through transparently.
