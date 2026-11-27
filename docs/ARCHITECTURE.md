@@ -118,3 +118,5 @@ flowchart TB
 - **Layer 1 (`tests/server.test.ts`)**: Cloud Run adapter security invariants (`X-Lab-Router-Secret`, `/healthz`, `FirestoreKvAdapter`/`MemoryKvAdapter` TTL, `X-Forwarded-Host`, JWT redaction, `413 PAYLOAD_TOO_LARGE`, and `400` fail-closed JSON/action validation).
 - **Layer 2 (`tests/api.test.ts`)**: Direct route handler tests for `functions/api/grc-compliance/{posture,verify}.ts` with `MemoryKvAdapter` (fail-closed `409 EVIDENCE_DRIFT_MISMATCH` on partial remediation, full remediation flow, session isolation, and negative payload checks).
 - **Layer 3 (`tests/engine.test.ts`, `tests/selectors.test.ts`)**: Pure DOM-free unit tests for `src/engine/grcComplianceEngine.ts` (`computeAuditReadinessScore`, `buildComplianceAttestationPack`, deterministic `sha256Hex`) and extracted UI selectors in `src/engine/grcComplianceSelectors.ts`.
+
+- **Lease-Boundary Lifecycle (`LabLeaseGuard`)**: Synced `src/components/LabLeaseGuard.tsx` with `onLeaseEnded?: () => void` callback invoked on **End Lab** (`handleRelease()`) and lease expiry transitions.
