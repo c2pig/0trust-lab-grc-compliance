@@ -37,6 +37,8 @@ export interface GrcSessionKvRecord {
 
 const MAX_BODY_BYTES = 64 * 1024;
 const KV_TTL_SECONDS = 3600;
+const MAX_EPHEMERAL_ENTRIES = 256;
+const EPHEMERAL_TTL_MS = KV_TTL_SECONDS * 1000;
 const VALID_ACTIONS = new Set<PostureAction>(['INJECT_DRIFT', 'REMEDIATE', 'RESET']);
 const VALID_DRIFT_IDS = new Set<DriftControlId>([
   'IAM_MFA_BYPASS',
@@ -44,7 +46,34 @@ const VALID_DRIFT_IDS = new Set<DriftControlId>([
   'PII_UNMASKED'
 ]);
 
-export const ephemeralGrcStore = new Map<string, GrcSessionKvRecord>();
+const ephemeralGrcStore = new Map<
+  string,
+  { record: GrcSessionKvRecord; expiresAt: number }
+>();
+
+function getEphemeralGrc(key: string): GrcSessionKvRecord | null {
+  const entry = ephemeralGrcStore.get(key);
+  if (!entry) return null;
+  if (Date.now() > entry.expiresAt) {
+    ephemeralGrcStore.delete(key);
+    return null;
+  }
+  return entry.record;
+}
+
+function setEphemeralGrc(key: string, record: GrcSessionKvRecord): void {
+  const now = Date.now();
+  for (const [k, v] of ephemeralGrcStore) {
+    if (now > v.expiresAt) ephemeralGrcStore.delete(k);
+  }
+  if (ephemeralGrcStore.has(key)) ephemeralGrcStore.delete(key);
+  while (ephemeralGrcStore.size >= MAX_EPHEMERAL_ENTRIES) {
+    const oldest = ephemeralGrcStore.keys().next().value;
+    if (oldest === undefined) break;
+    ephemeralGrcStore.delete(oldest);
+  }
+  ephemeralGrcStore.set(key, { record, expiresAt: now + EPHEMERAL_TTL_MS });
+}
 
 export function sanitizeSessionId(raw: string | null | undefined): string {
   if (!raw) return 'demo-visitor';
@@ -176,7 +205,7 @@ export async function loadSessionRecord(
       // Fall through to default record
     }
   } else {
-    const existing = ephemeralGrcStore.get(kvKey);
+    const existing = getEphemeralGrc(kvKey);
     if (existing) return existing;
   }
   return createDefaultSessionRecord(sessionId);
@@ -194,7 +223,7 @@ export async function saveSessionRecord(
     });
     return 'cloudflare-kv';
   }
-  ephemeralGrcStore.set(kvKey, record);
+  setEphemeralGrc(kvKey, record);
   return 'ephemeral-edge';
 }
 
