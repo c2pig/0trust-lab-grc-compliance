@@ -350,4 +350,51 @@ describe('Lab 8 (grc-compliance) Cloud Run Adapter — Security & API Invariants
     assert.equal(verifyData.status, 'VERIFIED_PASS');
     assert.equal(verifyData.evidence_sha256.length, 64);
   });
+
+  it('rejects >64KB JSON bodies with 413 PAYLOAD_TOO_LARGE', async () => {
+    const app = createCloudRunApp({ kv: new MemoryKvAdapter({ labSlug: 'grc-compliance' }) });
+    const oversizedPayload = JSON.stringify({
+      action: 'INJECT_DRIFT',
+      drift_id: 'IAM_MFA_BYPASS',
+      padding: 'x'.repeat(65 * 1024)
+    });
+
+    const res = await app.request('http://127.0.0.1:8080/api/grc-compliance/posture', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Session-Id': 'oversized-test-session'
+      },
+      body: oversizedPayload
+    });
+
+    assert.equal(res.status, 413);
+    const data = (await res.json()) as { error: string };
+    assert.equal(data.error, 'PAYLOAD_TOO_LARGE');
+  });
+
+  it('rejects malformed JSON and invalid action/drift_id with 400 fail-closed', async () => {
+    const app = createCloudRunApp({ kv: new MemoryKvAdapter({ labSlug: 'grc-compliance' }) });
+
+    const badJsonRes = await app.request('http://127.0.0.1:8080/api/grc-compliance/posture', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Session-Id': 'bad-json-session'
+      },
+      body: '{"action": "INJECT_DRIFT", broken'
+    });
+    assert.equal(badJsonRes.status, 400);
+    const badJsonData = (await badJsonRes.json()) as { error: string };
+    assert.equal(badJsonData.error, 'INVALID_JSON');
+
+    const missingActionRes = await app.request('http://127.0.0.1:8080/api/grc-compliance/verify', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ drift_id: 'IAM_MFA_BYPASS' })
+    });
+    assert.equal(missingActionRes.status, 400);
+    const missingActionData = (await missingActionRes.json()) as { error: string };
+    assert.equal(missingActionData.error, 'INVALID_ACTION');
+  });
 });

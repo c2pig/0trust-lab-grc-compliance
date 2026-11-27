@@ -111,3 +111,10 @@ flowchart TB
 - **Terraform PR CI Validation (`.github/workflows/ci.yml`)**: Added a least-privilege `terraform-validate` job (`terraform_version: "1.11.4"`) executing `terraform fmt -check`, `terraform init -backend=false -input=false`, and `terraform validate` on every pull request targeting `main`.
 
 - **X-Ray Telemetry Drawer Theme**: Uses Chrome DevTools Light Mode palette (`#ffffff` / `#f1f3f4` surfaces, `#dadce0` borders, `#202124` / `#5f6368` text, `#1a73e8` active indicators) for high-contrast readability.
+
+---
+
+## 3-Layer Unit Testing (`tsx --test`)
+- **Layer 1 (`tests/server.test.ts`)**: Cloud Run adapter security invariants (`X-Lab-Router-Secret`, `/healthz`, `FirestoreKvAdapter`/`MemoryKvAdapter` TTL, `X-Forwarded-Host`, JWT redaction, `413 PAYLOAD_TOO_LARGE`, and `400` fail-closed JSON/action validation).
+- **Layer 2 (`tests/api.test.ts`)**: Direct route handler tests for `functions/api/grc-compliance/{posture,verify}.ts` with `MemoryKvAdapter` (fail-closed `409 EVIDENCE_DRIFT_MISMATCH` on partial remediation, full remediation flow, session isolation, and negative payload checks).
+- **Layer 3 (`tests/engine.test.ts`, `tests/selectors.test.ts`)**: Pure DOM-free unit tests for `src/engine/grcComplianceEngine.ts` (`computeAuditReadinessScore`, `buildComplianceAttestationPack`, deterministic `sha256Hex`) and extracted UI selectors in `src/engine/grcComplianceSelectors.ts`.

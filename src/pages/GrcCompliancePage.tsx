@@ -17,6 +17,10 @@ import {
   createGrcSpan,
   createInitialGrcState
 } from '../engine/grcComplianceEngine';
+import {
+  selectGlobalStatusLabel,
+  selectGrcSeatBadges
+} from '../engine/grcComplianceSelectors';
 import { RoleSeatItem, RoleSwitcherBar } from '../components/RoleSwitcherBar';
 import { XRayDecodedProofSection, XRayTelemetryDrawer } from '../components/XRayTelemetryDrawer';
 import { ObservabilitySpan } from '../types';
@@ -126,26 +130,17 @@ export function GrcCompliancePage({ onBack }: GrcCompliancePageProps) {
     [state.controls]
   );
 
-  const globalStatusLabel =
-    readiness.driftedCount > 0
-      ? `Drift Detected (${readiness.scorePct}%)`
-      : readiness.verifiedCount === POSTURE_CHECK_CATALOG.length
-        ? `Audit Ready (${readiness.scorePct}%)`
-        : `Pending Sign-Off (${readiness.scorePct}%)`;
+  const globalStatusLabel = selectGlobalStatusLabel(
+    readiness,
+    POSTURE_CHECK_CATALOG.length
+  );
 
   const seats: RoleSeatItem<GrcSeatId>[] = useMemo(() => {
-    const engineerBadge = hasRemediationTicket
-      ? { text: 'Remediation Req', tone: 'amber' as const, pulse: true }
-      : readiness.driftedCount > 0
-        ? { text: `${readiness.driftedCount} Drift`, tone: 'crimson' as const, pulse: true }
-        : null;
-
-    const auditorBadge =
-      readiness.driftedCount > 0
-        ? { text: `${readiness.driftedCount} Drift`, tone: 'crimson' as const, pulse: true }
-        : readiness.verifiedCount < POSTURE_CHECK_CATALOG.length
-          ? { text: 'Verify Ready', tone: 'amber' as const, pulse: true }
-          : null;
+    const { engineerBadge, auditorBadge } = selectGrcSeatBadges(
+      hasRemediationTicket,
+      readiness,
+      POSTURE_CHECK_CATALOG.length
+    );
 
     return [
       {

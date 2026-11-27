@@ -136,9 +136,11 @@ export interface ApiCallResult {
 }
 
 function isEdgeApiLikelyAvailable(): boolean {
-  if (typeof window === 'undefined') return false;
-  const host = window.location.hostname;
-  const port = window.location.port;
+  const win = (globalThis as { window?: { location?: { hostname?: string; port?: string } } })
+    .window;
+  if (!win?.location) return false;
+  const host = win.location.hostname ?? '';
+  const port = win.location.port ?? '';
   // vite dev (5182) and vite preview (4182) have no Edge Functions; wrangler pages dev uses 8788
   if ((host === 'localhost' || host === '127.0.0.1') && port !== '8788') {
     return false;
